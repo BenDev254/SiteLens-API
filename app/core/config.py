@@ -1,11 +1,15 @@
+import os
 from pydantic_settings import BaseSettings
-from typing import List
-import json
-from typing import Optional
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
+    # REQUIRED
     DATABASE_URL: str
+    SECRET_KEY: str
+    GEMINI_API_KEY: str
+
+    # App
     APP_NAME: str = "sitelens-backend"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
@@ -17,20 +21,18 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
 
     # Auth
-    SECRET_KEY: str = "AIzaSyCwLSemyDNRjoXEtQpVb1_DnooE12iTvkw"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
 
     # Google / Gemini
-    GEMINI_API_KEY: str = "AIzaSyCwLSemyDNRjoXEtQpVb1_DnooE12iTvkw"
     GEMINI_MODEL: str = "gemini-3-pro-preview"
     GOOGLE_API_KEY: Optional[str] = None
     GOOGLE_SEARCH_CX: Optional[str] = None
-    
 
     class Config:
-        env_file = ".env"
         case_sensitive = True
+        # Load .env ONLY when not production
+        env_file = ".env" if os.getenv("ENVIRONMENT") != "production" else None
 
 
 settings = Settings()
