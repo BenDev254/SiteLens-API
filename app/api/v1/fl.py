@@ -1,10 +1,14 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, and_
 
 from app.schemas.fl import (
+    EnvoyTrainRequest,
     FLExperimentCreate,
     FLExperimentRead,
+    FLInferenceRequest,
+    FLInferenceResponse,
     JoinExperimentRequest,
     JoinExperimentResponse,
     WeightsUploadRequest,
@@ -22,8 +26,11 @@ from app.services.fl_service import (
     start_experiment,
     envoy_train,
     aggregate_round,
-    get_global_model
+    get_global_model,
+    
 )
+from app.models.fl_participant import FLParticipant
+from app.models.fl_weights_upload import FLWeightsUpload
 
 router = APIRouter(prefix="/api/v1/fl", tags=["federated-learning"])
 
@@ -71,18 +78,38 @@ async def api_join_experiment(
     user=Depends(get_current_user)
 ):
     try:
-        p = await join_experiment(session, experiment_id, user.id)
+        participant = await join_experiment(session, experiment_id, user.id)
         return JoinExperimentResponse(
-            participant_id=p.id,
-            experiment_id=p.experiment_id,
-            user_id=p.user_id
+            participant_id=participant.id,
+            experiment_id=participant.experiment_id,
+            user_id=participant.user_id
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
 
 # -----------------------------
-# Start Experiment (Send Training Artifacts to Envoys)
+# Participant Helper Endpoint
+# -----------------------------
+
+@router.get("/experiments/{experiment_id}/my-participant-id")
+async def api_get_participant_id(
+    experiment_id: int,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(FLParticipant).where(
+        FLParticipant.experiment_id == experiment_id,
+        FLParticipant.user_id == user.id
+    )
+    participant = (await session.execute(stmt)).scalars().first()
+    if not participant:
+        raise HTTPException(status_code=404, detail="User not a participant")
+    return {"participant_id": participant.id}
+
+
+# -----------------------------
+# Start Experiment
 # -----------------------------
 
 @router.post("/experiments/{experiment_id}/start")
@@ -101,19 +128,30 @@ async def api_start_experiment(experiment_id: int, session: AsyncSession = Depen
 @router.post("/experiments/{experiment_id}/envoy/train")
 async def api_envoy_train(
     experiment_id: int,
-    participant_id: int,
-    weights: Dict[str, Any],
+    payload: EnvoyTrainRequest,
     session: AsyncSession = Depends(get_session)
 ):
+    """
+    Trigger local training for a participant (envoy) on AssessmentResult dataset
+    and immediately aggregate into global model.
+    """
     try:
-        result = await envoy_train(session, experiment_id, participant_id, weights)
+        result = await envoy_train(
+            session=session,
+            experiment_id=experiment_id,
+            participant_id=payload.participant_id,
+            project_id=payload.project_id,
+            epochs=payload.epochs,
+            lr=payload.lr,
+        )
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 # -----------------------------
-# Upload Weights (optional, legacy)
+# Upload Weights (optional)
 # -----------------------------
 
 @router.post("/weights/upload", response_model=WeightsUploadResponse)
@@ -146,46 +184,101 @@ async def api_get_uploads(experiment_id: int, session: AsyncSession = Depends(ge
 
 
 # -----------------------------
-# Aggregation Endpoint (Director)
+# Aggregation Endpoint
 # -----------------------------
 
 @router.post("/experiments/{experiment_id}/aggregate")
 async def api_aggregate_round(experiment_id: int, session: AsyncSession = Depends(get_session)):
     try:
-        avg = await aggregate_round(session, experiment_id)
-        if not avg:
+        agg_weights = await aggregate_round(session, experiment_id)
+        if not agg_weights:
             raise HTTPException(status_code=400, detail="Not enough envoy updates to aggregate")
-        return {"aggregated_weights": avg}
+        # Update global model after aggregation
+        await update_global_model(session, experiment_id, agg_weights)
+        # Return contributors for transparency
+        stmt = select(FLWeightsUpload.uploader_id).where(
+            and_(
+                FLWeightsUpload.experiment_id == experiment_id,
+                FLWeightsUpload.round == (await get_experiment(session, experiment_id)).current_round
+            )
+        )
+        res = await session.execute(stmt)
+        contributor_ids = [uid for (uid,) in res.fetchall()]
+        return {"aggregated_weights": agg_weights, "contributors": contributor_ids}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 # -----------------------------
-# Global Model Inference
+# Global Model Inference (FIXED)
 # -----------------------------
 
-@router.post("/experiments/{experiment_id}/infer")
+@router.post(
+    "/experiments/{experiment_id}/infer",
+    response_model=FLInferenceResponse
+)
 async def api_infer(
     experiment_id: int,
-    input_weights: Dict[str, Any],
-    session: AsyncSession = Depends(get_session)
+    payload: FLInferenceRequest,
+    session: AsyncSession = Depends(get_session),
 ):
+    import torch
+    import torch.nn as nn
+
+    # Fetch global model
     global_model = await get_global_model(session, experiment_id)
     if not global_model:
-        raise HTTPException(status_code=404, detail="Global model not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Global model not available yet"
+        )
 
-    # simple weighted sum PoC
-    prediction = sum(
-        input_weights.get(k, 0.0) * global_model.weights.get(k, 0.0)
-        for k in global_model.weights
+    if not payload.inputs:
+        raise HTTPException(
+            status_code=400,
+            detail="Input batch cannot be empty"
+        )
+
+    input_dim = len(payload.inputs[0])
+
+    # --- Model architecture MUST match training ---
+    class InferenceModel(nn.Module):
+        def __init__(self, input_dim: int):
+            super().__init__()
+            self.linear = nn.Linear(input_dim, 1)
+
+        def forward(self, x):
+            return self.linear(x)
+
+    model = InferenceModel(input_dim=input_dim)
+
+    # --- FIX: Convert persisted lists → tensors ---
+    try:
+        state_dict = {
+            k: torch.tensor(v, dtype=torch.float32)
+            for k, v in global_model.weights.items()
+        }
+        model.load_state_dict(state_dict)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load global model weights: {str(e)}"
+        )
+
+    model.eval()
+
+    # --- Run inference ---
+    with torch.no_grad():
+        x = torch.tensor(payload.inputs, dtype=torch.float32)
+        outputs = model(x).squeeze(dim=-1)
+
+    return FLInferenceResponse(
+        predictions=outputs.tolist(),
+        model_round=global_model.round,
+        experiment_id=experiment_id
     )
 
-    return {
-        "prediction": prediction,
-        "global_weights": global_model.weights
-    }
 
-    
 # -----------------------------
 # End of File
 # -----------------------------

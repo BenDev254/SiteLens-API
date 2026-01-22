@@ -1,5 +1,5 @@
 from typing import Optional, List, Any, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 
@@ -80,3 +80,39 @@ class AggregateResponse(BaseModel):
     experiment_id: int
     new_round: int
     aggregated_weights: Dict[str, Any]
+
+
+from pydantic import BaseModel
+from typing import List
+
+class DatasetItem(BaseModel):
+    features: List[float]
+    label: float
+
+class EnvoyTrainRequest(BaseModel):
+    participant_id: int
+    project_id: int
+    epochs: int = 5
+    lr: float = 0.01
+
+
+
+
+# -------------------------
+# Inference
+# -------------------------
+class FLInferenceRequest(BaseModel):
+    """
+    Input features for inference.
+    Each item in `inputs` is a single sample.
+    """
+    inputs: List[List[float]] = Field(
+        ...,
+        description="Batch of feature vectors. Shape: [batch_size, feature_dim]"
+    )
+
+
+class FLInferenceResponse(BaseModel):
+    predictions: List[float]
+    model_round: int
+    experiment_id: int
