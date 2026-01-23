@@ -23,4 +23,5 @@ alembic>=1.10.0
 
 
 # ML
-torch==2.1.2
+torch==2.0.1
+
