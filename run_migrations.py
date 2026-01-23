@@ -1,20 +1,23 @@
-# run_migrations.py
-import os
-from alembic.config import Config
-from alembic import command
+import asyncio
+from sqlmodel import SQLModel, create_engine
+from sqlalchemy import text
 
-# Get the DATABASE_URL from the environment
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set!")
+# Use your DATABASE_URL
+DATABASE_URL = "postgresql+asyncpg://fmmcqhyjsk:bfKx$vh0y9$13rkS@bac-server.postgres.database.azure.com:5432/bac-database?ssl=require"
 
-# Load alembic.ini
-alembic_cfg = Config("alembic.ini")
+# Create a synchronous engine for simple inspection
+engine = create_engine(DATABASE_URL.replace('+asyncpg', ''))
 
-# Override the URL from environment
-alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+# List all tables
+with engine.connect() as conn:
+    result = conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname='public';"))
+    print("Tables in the database:")
+    for row in result:
+        print(row[0])
 
-# Apply all migrations
-command.upgrade(alembic_cfg, "head")
-
-print("Migrations applied successfully.")
+# Optionally, query one of your tables
+with engine.connect() as conn:
+    result = conn.execute(text("SELECT * FROM project LIMIT 5;"))
+    print("\nSample data from project table:")
+    for row in result:
+        print(row)
