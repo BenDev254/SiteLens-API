@@ -1,26 +1,19 @@
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
-
-# Pydantic (compatible with google-genai)
 pydantic>=2.9,<3.0
 pydantic-settings>=2.3
 email-validator
-
-# Google Gemini SDK (NEW)
 google-genai==1.59.0
-
 httpx>=0.24.0
 PyPDF2==3.0.1
 python-dotenv==1.0.0
 PyJWT==2.8.0
 passlib[bcrypt]==1.7.4
-
-# Database
 asyncpg==0.29.0
 sqlmodel>=0.0.8
 alembic>=1.10.0
-
-
-# ML
-torch==2.2.2
+docx2txt==0.9
+torch==2.9.1+cpu
+torchaudio==2.9.1+cpu
+torchvision==0.24.1+cpu
