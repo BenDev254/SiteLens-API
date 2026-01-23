@@ -20,3 +20,7 @@ passlib[bcrypt]==1.7.4
 asyncpg==0.29.0
 sqlmodel>=0.0.8
 alembic>=1.10.0
+
+
+# ML
+torch==2.1.2
