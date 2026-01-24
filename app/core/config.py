@@ -1,6 +1,6 @@
-import os
 from pydantic_settings import BaseSettings
-from typing import List, Optional
+from typing import List, Optional, Union
+import os
 
 
 class Settings(BaseSettings):
@@ -15,10 +15,11 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     MIGRATE_ON_START: bool = False
 
-    # CORS / Uploads
+    # CORS
+    CORS_ALLOW_ALL: bool = True
+    CORS_ORIGINS: List[str] = []
 
-    CORS_ORIGINS: List[str] = ["http://localhost:5173"]
-    CORS_ORIGINS: List[str] = ["https://2ljwk848107dqcj56wagzi5tjhvk3dj7jyaqih9sas9okpqj6m-h852644758.scf.usercontent.goog"]
+    # Uploads
     UPLOAD_DIR: str = "./uploads"
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
 
@@ -33,7 +34,6 @@ class Settings(BaseSettings):
 
     class Config:
         case_sensitive = True
-        # Load .env ONLY when not production
         env_file = ".env" if os.getenv("ENVIRONMENT") != "production" else None
 
 

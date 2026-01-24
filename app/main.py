@@ -7,11 +7,20 @@ from app.core.logging import configure_logging
 from app.core.exceptions import register_exception_handlers
 from app.middleware import CorrelationIdMiddleware
 from app.core.database import init_db
+from fastapi.middleware.cors import CORSMiddleware
 
 configure_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],         
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Middleware: correlation id
 app.add_middleware(BaseHTTPMiddleware, dispatch=CorrelationIdMiddleware())
