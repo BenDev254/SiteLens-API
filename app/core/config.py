@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     MIGRATE_ON_START: bool = False
 
     # CORS / Uploads
+
     CORS_ORIGINS: List[str] = ["http://localhost:5173"]
+    CORS_ORIGINS: List[str] = ["https://2ljwk848107dqcj56wagzi5tjhvk3dj7jyaqih9sas9okpqj6m-h852644758.scf.usercontent.goog"]
     UPLOAD_DIR: str = "./uploads"
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
 
