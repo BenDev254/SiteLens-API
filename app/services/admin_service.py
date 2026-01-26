@@ -135,13 +135,19 @@ async def create_professional(session: AsyncSession, payload) -> Professional:
     await session.commit()
     await session.refresh(professional)
 
+    
+    # Get the contractor's user identifier
+    contractor_user = await session.get(User, contractor.owner_id)
+
     # Send email
     if getattr(payload, "email", None):
         send_contractor_email(
             to_email=payload.email,
             username=user.username,
-            password=raw_password
+            password=raw_password,
+            identifier=contractor_user.identifier  # <-- pass the identifier
         )
+
 
     return professional
 
