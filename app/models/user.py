@@ -17,6 +17,7 @@ class User(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(index=True, sa_column_kwargs={"unique": True})
+    email: str = Field(index=True, sa_column_kwargs={"unique": True})
     hashed_password: str
     role: Role = Field(default=Role.CONTRACTOR)
     identifier: Optional[str] = Field(default=None, index=True, sa_column_kwargs={"unique": True})

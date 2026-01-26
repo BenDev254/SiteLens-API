@@ -1,3 +1,5 @@
+import os
+import secrets
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy import select, func
@@ -11,26 +13,212 @@ from app.models.policy import Policy
 from app.models.admin_ai_config import AdminAIConfig
 from app.models.admin_audit import AdminAudit
 from app.models.project import Project
+from app.models.user import User, Role
+from app.schemas.admin import ContractorRead
+from utils.email import send_contractor_email
+from app.core.security import hash_password
 
 
-async def record_admin_audit(session: AsyncSession, user_id: Optional[int], action: str, resource_type: Optional[str] = None, resource_id: Optional[int] = None, details: Optional[Dict[str, Any]] = None) -> AdminAudit:
-    audit = AdminAudit(user_id=user_id, action=action, resource_type=resource_type, resource_id=resource_id, details=details)
+
+
+import secrets
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
+from passlib.hash import bcrypt
+from datetime import datetime
+from typing import Optional, Dict, Any
+import re
+
+
+
+
+# --- CONTRACTOR UTILITIES ---
+
+
+
+IDENTIFIER_REGEX = re.compile(r"^P/NO-(\d+)$")
+
+async def generate_next_contractor_identifier(session: AsyncSession) -> str:
+    res = await session.execute(
+        select(User.identifier)
+        .where(
+            User.role == Role.CONTRACTOR,
+            User.identifier.is_not(None)
+        )
+        .order_by(User.id.desc())
+    )
+
+    for (identifier,) in res.all():
+        match = IDENTIFIER_REGEX.match(identifier)
+        if match:
+            last_num = int(match.group(1))
+            return f"P/NO-{last_num + 1:03d}"
+
+    return "P/NO-001"
+
+
+
+async def create_contractor(session: AsyncSession, payload) -> Contractor:
+    identifier = await generate_next_contractor_identifier(session)
+    raw_password = secrets.token_urlsafe(12)
+    hashed_password = hash_password(raw_password)
+
+
+    user = User(
+        username=payload.name.replace(" ", "_"),
+        email=payload.email,
+        hashed_password=hashed_password,
+        role=Role.CONTRACTOR,
+        identifier=identifier,
+    )
+
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    contractor = Contractor(
+        name=payload.name,
+        headquarters=payload.headquarters,
+        owner_id=user.id,
+    )
+
+    session.add(contractor)
+    await session.commit()
+    await session.refresh(contractor)
+
+
+    from app.core.config import settings
+    print("EMAIL_ADDRESS:", repr(settings.EMAIL_ADDRESS))
+    print("EMAIL_PASSWORD:", "SET" if settings.EMAIL_PASSWORD else "MISSING")
+
+
+    send_contractor_email(
+        to_email=payload.email,
+        username=user.username,
+        password=raw_password,
+        identifier=identifier,
+    )
+
+    return contractor
+
+
+async def create_professional(session: AsyncSession, payload) -> Professional:
+    # Check contractor exists
+    res = await session.execute(select(Contractor).where(Contractor.id == payload.contractor_id))
+    contractor = res.scalar_one_or_none()
+    if not contractor:
+        raise ValueError("Contractor not found")
+
+    # Generate random password
+    raw_password = secrets.token_urlsafe(12)
+    hashed_password = hash_password(raw_password)
+
+
+    # Create User for professional
+    user = User(
+        username=payload.name.replace(" ", "_"),
+        hashed_password=hashed_password,
+        role=Role.CONTRACTOR,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    # Create Professional record
+    professional = Professional(
+        name=payload.name,
+        title=payload.title,
+        contractor_id=contractor.id,
+    )
+    session.add(professional)
+    await session.commit()
+    await session.refresh(professional)
+
+    # Send email
+    if getattr(payload, "email", None):
+        send_contractor_email(
+            to_email=payload.email,
+            username=user.username,
+            password=raw_password
+        )
+
+    return professional
+
+
+# --- DELETE & LIST FUNCTIONS ---
+
+async def delete_contractor(session: AsyncSession, contractor_id: int):
+    res = await session.execute(select(Contractor).where(Contractor.id == contractor_id))
+    contractor = res.scalar_one_or_none()
+    if not contractor:
+        raise ValueError("Contractor not found")
+    await session.delete(contractor)
+    await session.commit()
+
+
+async def delete_professional(session: AsyncSession, professional_id: int):
+    res = await session.execute(select(Professional).where(Professional.id == professional_id))
+    professional = res.scalar_one_or_none()
+    if not professional:
+        raise ValueError("Professional not found")
+    await session.delete(professional)
+    await session.commit()
+
+
+
+
+async def list_contractors(session: AsyncSession):
+    stmt = (
+        select(Contractor)
+        .options(selectinload(Contractor.owner))
+    )
+    res = await session.execute(stmt)
+    contractors = res.scalars().all()
+
+    return [
+        ContractorRead(
+            id=c.id,
+            name=c.name,
+            headquarters=c.headquarters,
+            email=c.owner.username if c.owner else None,
+            identifier=c.owner.identifier if c.owner else None,
+        )
+        for c in contractors
+    ]
+
+
+
+
+
+
+async def list_professionals(session: AsyncSession):
+    res = await session.execute(select(Professional))
+    professionals = res.scalars().all()
+    for p in professionals:
+        res_user = await session.execute(select(User).where(User.username == p.name.replace(" ", "_")))
+        user = res_user.scalar_one_or_none()
+        if user:
+            p.email = user.username
+    return professionals
+
+
+# --- ADMIN AUDIT ---
+
+async def record_admin_audit(session: AsyncSession, user_id: Optional[int], action: str, resource_type: Optional[str] = None,
+                             resource_id: Optional[int] = None, details: Optional[Dict[str, Any]] = None) -> AdminAudit:
+    audit = AdminAudit(
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        details=details
+    )
     session.add(audit)
     await session.commit()
     await session.refresh(audit)
     return audit
 
-
-async def list_contractors(session: AsyncSession) -> List[Contractor]:
-    stmt = select(Contractor)
-    res = await session.execute(stmt)
-    return res.scalars().all()
-
-
-async def list_professionals(session: AsyncSession) -> List[Professional]:
-    stmt = select(Professional)
-    res = await session.execute(stmt)
-    return res.scalars().all()
 
 
 async def list_fines(session: AsyncSession) -> List[Fine]:

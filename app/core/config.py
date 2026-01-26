@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     GOOGLE_SEARCH_CX: Optional[str] = None
 
+    # Email
+    EMAIL_ADDRESS: str
+    EMAIL_PASSWORD: str
+
     class Config:
         case_sensitive = True
         env_file = ".env" if os.getenv("ENVIRONMENT") != "production" else None

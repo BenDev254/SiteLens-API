@@ -77,6 +77,10 @@ async def on_startup():
         logger.info("MIGRATE_ON_START enabled: creating DB tables (SQLModel metadata)")
         await init_db()
 
+# @app.on_event("startup")
+# async def on_startup():
+#     logger.info("Starting app", extra={"app": settings.APP_NAME})
+
 
 @app.on_event("shutdown")
 async def on_shutdown():

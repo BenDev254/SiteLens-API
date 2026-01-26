@@ -7,3 +7,5 @@ class Professional(SQLModel, table=True):
     name: str
     title: Optional[str] = None
     contractor_id: Optional[int] = Field(default=None, foreign_key="contractor.id")
+
+    email: Optional[str] = None  # Optional, for frontend display

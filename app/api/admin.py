@@ -18,9 +18,55 @@ from app.schemas.admin import (
     AdminAIConfigRead,
     AdminAIConfigUpdate,
     AuditRecord,
+    ContractorCreate,
+    ProfessionalCreate,
 )
 
 router = APIRouter()
+
+
+@router.post("/contractors", response_model=ContractorRead)
+async def create_contractor(
+    payload: ContractorCreate,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_role(Role.GOVERNMENT)),
+):
+    contractor = await admin_service.create_contractor(session, payload)
+
+    await admin_service.record_admin_audit(
+        session,
+        user.id,
+        "create_contractor",
+        resource_type="contractor",
+        resource_id=contractor.id,
+        details={"name": contractor.name, "email": user.email},
+    )
+
+    return contractor
+
+
+@router.delete("/contractors/{contractor_id}")
+async def delete_contractor(
+    contractor_id: int,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_role(Role.GOVERNMENT)),
+):
+    try:
+        await admin_service.delete_contractor(session, contractor_id)
+
+        await admin_service.record_admin_audit(
+            session,
+            user.id,
+            "delete_contractor",
+            resource_type="contractor",
+            resource_id=contractor_id,
+        )
+
+        return {"ok": True, "contractor_id": contractor_id}
+    except ValueError:
+        raise HTTPException(status_code=404, detail="contractor not found")
+
+
 
 
 @router.get("/contractors", response_model=List[ContractorRead])
@@ -28,6 +74,50 @@ async def get_contractors(session: AsyncSession = Depends(get_session), user=Dep
     items = await admin_service.list_contractors(session)
     await admin_service.record_admin_audit(session, user.id, "list_contractors", resource_type="contractor")
     return items
+
+
+
+@router.post("/professionals", response_model=ProfessionalRead)
+async def create_professional(
+    payload: ProfessionalCreate,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_role(Role.GOVERNMENT)),
+):
+    professional = await admin_service.create_professional(session, payload)
+
+    await admin_service.record_admin_audit(
+        session,
+        user.id,
+        "create_professional",
+        resource_type="professional",
+        resource_id=professional.id,
+        details={"name": professional.name, "email": professional.email},
+    )
+
+    return professional
+
+
+@router.delete("/professionals/{professional_id}")
+async def delete_professional(
+    professional_id: int,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(require_role(Role.GOVERNMENT)),
+):
+    try:
+        await admin_service.delete_professional(session, professional_id)
+
+        await admin_service.record_admin_audit(
+            session,
+            user.id,
+            "delete_professional",
+            resource_type="professional",
+            resource_id=professional_id,
+        )
+
+        return {"ok": True, "professional_id": professional_id}
+    except ValueError:
+        raise HTTPException(status_code=404, detail="professional not found")
+
 
 
 @router.get("/professionals", response_model=List[ProfessionalRead])

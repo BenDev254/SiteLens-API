@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
 
 
@@ -55,11 +55,32 @@ class AuditRecord(BaseModel):
 class ContractorRead(BaseModel):
     id: int
     name: str
-    owner_id: int
+    headquarters: Optional[str] = None
+    email: Optional[str] = None      
+    identifier: Optional[str] = None  
 
+    class Config:
+        from_attributes = True
 
 class ProfessionalRead(BaseModel):
     id: int
     name: str
-    title: Optional[str]
-    contractor_id: Optional[int]
+    title: Optional[str] = None
+    contractor_id: int
+    email: Optional[str] = None  
+
+    class Config:
+        from_attributes = True
+
+
+
+class ContractorCreate(BaseModel):
+    name: str
+    headquarters: Optional[str] = None
+    email: Optional[str] = None 
+
+class ProfessionalCreate(BaseModel):
+    name: str
+    title: Optional[str] = None
+    contractor_id: int
+    email: Optional[str] = None
