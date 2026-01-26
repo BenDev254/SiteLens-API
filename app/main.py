@@ -1,4 +1,5 @@
 import logging
+import subprocess
 from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -73,9 +74,16 @@ register_exception_handlers(app)
 @app.on_event("startup")
 async def on_startup():
     logger.info("Starting app", extra={"app": settings.APP_NAME})
+
     if settings.MIGRATE_ON_START:
-        logger.info("MIGRATE_ON_START enabled: creating DB tables (SQLModel metadata)")
-        await init_db()
+        logger.info("MIGRATE_ON_START enabled: running migrations")
+        try:
+            # Run alembic upgrade head
+            subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
+            logger.info("Database migration completed")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Migration failed: {e}")
+            raise
 
 # @app.on_event("startup")
 # async def on_startup():
