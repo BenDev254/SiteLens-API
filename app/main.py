@@ -2,6 +2,8 @@ import logging
 import subprocess
 from fastapi import FastAPI
 from starlette.middleware.base import BaseHTTPMiddleware
+import sys
+
 
 from app.core.config import settings
 from app.core.logging import configure_logging
