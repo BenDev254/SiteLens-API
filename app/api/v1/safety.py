@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
@@ -107,4 +108,66 @@ async def assess_project_image(
     return {
         "assessment": assessment,
         "hazards": hazards,
+    }
+
+
+
+@router.get("/projects/{project_id}/assessments/aggregate")
+async def get_project_assessments_aggregate(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Aggregate all image assessments for a project into a single summary.
+    """
+
+    # Validate project exists
+    project = await session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Fetch all assessments for this project
+    result = await session.execute(
+        select(AssessmentResult)
+        .where(AssessmentResult.project_id == project_id)
+    )
+    assessments = result.scalars().all()
+
+    if not assessments:
+        return {"project_id": project_id, "aggregated": {}}
+
+    assessment_ids = [a.id for a in assessments]
+
+    # Fetch hazards for all assessments
+    hazard_result = await session.execute(
+        select(AssessmentHazard).where(
+            AssessmentHazard.assessment_id.in_(assessment_ids)
+        )
+    )
+    hazards = hazard_result.scalars().all()
+
+    # Aggregate
+    combined_gemini_text = " ".join(
+        a.gemini_response.get("text", "") for a in assessments if a.gemini_response
+    )
+    all_hazards = [
+        {
+            "hazard_type": h.hazard_type,
+            "location": h.location,
+            "risk_level": h.risk_level,
+            "recommendations": h.recommendations,
+        }
+        for h in hazards
+    ]
+    avg_score = sum(a.score for a in assessments) / len(assessments)
+
+    return {
+        "project_id": project_id,
+        "aggregated": {
+            "average_score": avg_score,
+            "combined_notes": combined_gemini_text,
+            "all_hazards": all_hazards,
+            "total_assessments": len(assessments),
+        }
     }
