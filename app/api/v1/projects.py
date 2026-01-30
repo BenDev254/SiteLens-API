@@ -1,8 +1,13 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session
+from sqlalchemy import select
 
 from app.core.database import get_session
+from app.models.assessment_result import AssessmentResult
+from app.models.project import Project
+from app.schemas.project_read import DashboardProjectStatsRead, DashboardProjectRead
 from app.services.project_service import (
     create_project,
     list_projects,
@@ -27,8 +32,10 @@ from app.schemas.domain import (
     DocumentRead,
     ProjectDocumentsWithOwnershipRead,
 )
+from app.schemas.project_read import DashboardProjectRead
 from app.core.security import get_current_user
 from app.models.user import Role
+from app.services.project_stats import compute_stats
 
 router = APIRouter(prefix="/projects", tags=["projects"]) 
 
@@ -187,3 +194,41 @@ async def ai_config_audit(project_id: int, session: AsyncSession = Depends(get_s
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return await get_ai_config_audit(session, project_id)
+
+
+@router.get("/{project_id}", response_model=DashboardProjectRead)
+async def get_project(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    project = await session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    result = await session.execute(
+        select(AssessmentResult).where(
+            AssessmentResult.project_id == project_id
+        )
+    )
+    assessments = result.scalars().all()
+
+    stats = compute_stats(assessments)
+
+    return DashboardProjectRead(
+        id=project.id,
+        name=project.name,
+        description=project.description,
+        location="Upper Hill, Nairobi",       
+        status=project.status.value.lower(),
+        ownerType="PRIVATE",                  
+        stats=DashboardProjectStatsRead(
+            totalAssessments=stats["totalAssessments"],
+            criticalRisks=stats["criticalRisks"],
+            averageSafetyScore=stats["averageSafetyScore"],
+            complianceRate=stats["complianceRate"],
+            financialRiskScore=12,
+            laborForceIndex=85,
+            flModelDrift=0.02,
+            activeResearchNodes=3,
+        ),
+    )
