@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.database import get_session
 from app.models.assessment_result import AssessmentResult
 from app.models.project import Project
+from app.models.project_document import ProjectDocument
 from app.schemas.project_read import DashboardProjectStatsRead, DashboardProjectRead
 from app.services.project_service import (
     create_project,
@@ -36,6 +37,7 @@ from app.schemas.project_read import DashboardProjectRead
 from app.core.security import get_current_user
 from app.models.user import Role
 from app.services.project_stats import compute_stats
+from app.services.project_service import fetch_project
 
 router = APIRouter(prefix="/projects", tags=["projects"]) 
 
@@ -121,28 +123,34 @@ async def get_signed_url(project_id: int, type: str, filename: str, session: Asy
     return info
 
 
+
 @router.post("/{project_id}/docs", response_model=DocumentRead)
-async def create_doc(project_id: int, doc_type: str = Form(...), file: UploadFile = File(...), session: AsyncSession = Depends(get_session), user=Depends(get_current_user)):
-    """Upload a document file to a project."""
-    project = await get_project(session, project_id)
+async def create_doc(
+    project_id: int,
+    doc_type: str = Form(...),
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user)
+):
+    project = await fetch_project(session, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    # ownership check
+
     if user.role != Role.GOVERNMENT:
         is_owner = await check_ownership(session, project, user)
         if not is_owner:
             raise HTTPException(status_code=403, detail="Not owner")
-    
-    # Generate storage key based on file
-    from datetime import datetime
-    storage_key = f"projects/{project_id}/{doc_type}/{int(datetime.utcnow().timestamp())}-{file.filename}"
-    
-    # Read and store file (placeholder - in production use GCS/S3)
+
     contents = await file.read()
-    # TODO: Upload to cloud storage
-    
-    # Create document record
-    doc = await create_document(session, project_id, doc_type, file.filename, storage_key)
+
+    doc = await create_document(
+        session=session,
+        project_id=project_id,
+        doc_type=doc_type,
+        filename=file.filename,
+        content=contents,
+        content_type=file.content_type
+    )
     return DocumentRead.from_orm(doc)
 
 
@@ -159,6 +167,37 @@ async def delete_doc(project_id: int, record_id: int, session: AsyncSession = De
     if not ok:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"ok": True}
+
+
+@router.get("/docs", response_model=List[DocumentRead])
+async def list_my_documents(
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Return all documents accessible to the logged-in user. 
+    - Government users see all documents
+    - Non-government users see documents only for projects they own. 
+    """
+
+    if user.role == Role.GOVERNMENT:
+        # Government: fetch all documents 
+        result = await session.execute(select(ProjectDocument))
+        docs = result.scalars().all()
+    else:
+        #Non-government: fetch only documents for projects they own 
+        result = await session.execute(
+            select(ProjectDocument)
+            .join(Project, ProjectDocument.project_id == Project.id)
+            .where(Project.contractor_id ==user.id)
+        )
+        docs = result.scalars().all()
+
+    # Return using the Pyndatic schema 
+    return [DocumentRead.from_attributes(doc) for doc in docs]
+
+
+
 
 
 @router.get("/{project_id}/ai-config")
@@ -197,7 +236,7 @@ async def ai_config_audit(project_id: int, session: AsyncSession = Depends(get_s
 
 
 @router.get("/{project_id}", response_model=DashboardProjectRead)
-async def get_project(
+async def get_dashboard_project(
     project_id: int,
     session: AsyncSession = Depends(get_session),
 ):

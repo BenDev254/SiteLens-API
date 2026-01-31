@@ -52,8 +52,8 @@ def generate_presigned_url(storage_key: str, expires_seconds: int = 3600, purpos
     return url
 
 
-async def create_document(session: AsyncSession, project_id: int, doc_type: str, filename: str, storage_key: str) -> ProjectDocument:
-    doc = ProjectDocument(project_id=project_id, type=doc_type, filename=filename, storage_key=storage_key)
+async def create_document(session: AsyncSession, project_id: int, doc_type: str, filename: str, content: bytes, content_type: str | None, ) -> ProjectDocument:
+    doc = ProjectDocument(project_id=project_id, type=doc_type, filename=filename, content=content, content_type=content_type, storage_key=None,)
     session.add(doc)
     await session.commit()
     await session.refresh(doc)
@@ -208,3 +208,6 @@ async def list_project_documents_with_ownership(session: AsyncSession, project_i
         "documents": documents
     }
 
+
+async def fetch_project(session: AsyncSession, project_id: int) -> Project | None:
+    return await session.get(Project, project_id)

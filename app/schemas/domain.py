@@ -127,30 +127,14 @@ class DocumentCreate(BaseModel):
 
 
 class DocumentRead(BaseModel):
-
-
     id: int
-
-
     project_id: int
-
-
     type: str
-
-
     filename: str
-
-
-    storage_key: str
-
-
-    created_at: datetime
-
-
-    
-
-
-    model_config = ConfigDict(from_attributes=True)
+    content_type: Optional[str]
+    storage_key: Optional[str] 
+    class Config:
+        from_attributes = True
 
 
 

@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import LargeBinary, SQLModel, Field, Relationship
 
 
 class ProjectDocument(SQLModel, table=True):
@@ -8,7 +8,12 @@ class ProjectDocument(SQLModel, table=True):
     project_id: int = Field(foreign_key="project.id")
     type: str
     filename: str
-    storage_key: str
+
+    content: bytes = Field(sa_column=LargeBinary)
+    content_type: Optional[str]
+
+
+    storage_key: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     project: Optional["Project"] = Relationship(back_populates="documents")
