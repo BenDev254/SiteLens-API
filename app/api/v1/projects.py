@@ -151,7 +151,7 @@ async def create_doc(
         content=contents,
         content_type=file.content_type
     )
-    return DocumentRead.from_(doc)
+    return DocumentRead.from_orm(doc)
 
 
 @router.delete("/{project_id}/docs/{record_id}")

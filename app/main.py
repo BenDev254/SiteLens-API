@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.exceptions import register_exception_handlers
 from app.middleware import CorrelationIdMiddleware
-from app.core.database import init_db
+# from app.core.database import init_db
 from fastapi.middleware.cors import CORSMiddleware
 
 configure_logging()
@@ -73,23 +73,23 @@ app.include_router(v1_video_live.router, prefix="/api/v1", tags=["safety"])
 register_exception_handlers(app)
 
 
-@app.on_event("startup")
-async def on_startup():
-    logger.info("Starting app", extra={"app": settings.APP_NAME})
-
-    if settings.MIGRATE_ON_START:
-        logger.info("MIGRATE_ON_START enabled: running migrations")
-        try:
-            # Run alembic upgrade head
-            subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
-            logger.info("Database migration completed")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Migration failed: {e}")
-            raise
-
 # @app.on_event("startup")
 # async def on_startup():
 #     logger.info("Starting app", extra={"app": settings.APP_NAME})
+
+#     if settings.MIGRATE_ON_START:
+#         logger.info("MIGRATE_ON_START enabled: running migrations")
+#         try:
+#             # Run alembic upgrade head
+#             subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
+#             logger.info("Database migration completed")
+#         except subprocess.CalledProcessError as e:
+#             logger.error(f"Migration failed: {e}")
+#             raise
+
+@app.on_event("startup")
+async def on_startup():
+    logger.info("Starting app", extra={"app": settings.APP_NAME})
 
 
 @app.on_event("shutdown")
