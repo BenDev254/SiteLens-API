@@ -30,7 +30,7 @@ router = APIRouter(prefix="/safety", tags=["safety"])
 logger = logging.getLogger(__name__)
 
 
-UPLOAD_PROGRESS_CHUNK_SIZE = 5 * 1024 * 1024  # 5 MB
+UPLOAD_PROGRESS_CHUNK_SIZE = 5 * 1024 * 1024  
 
 
 def force_json_safe(value: Any):

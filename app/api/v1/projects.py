@@ -151,7 +151,7 @@ async def create_doc(
         content=contents,
         content_type=file.content_type
     )
-    return DocumentRead.from_orm(doc)
+    return DocumentRead.from_(doc)
 
 
 @router.delete("/{project_id}/docs/{record_id}")
@@ -194,7 +194,7 @@ async def list_my_documents(
         docs = result.scalars().all()
 
     # Return using the Pyndatic schema 
-    return [DocumentRead.from_attributes(doc) for doc in docs]
+    return [DocumentRead.from_orm(doc) for doc in docs]
 
 
 
