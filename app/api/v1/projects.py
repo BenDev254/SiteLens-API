@@ -2,12 +2,15 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import get_session
 from app.models.assessment_result import AssessmentResult
-from app.models.project import Project
+from app.models.fl_experiment import FLExperiment
+from app.models.labor import Labor
+from app.models.project import Project, ProjectStatus
 from app.models.project_document import ProjectDocument
+from app.models.tax import TaxStatus, TaxSubmission
 from app.schemas.project_read import DashboardProjectStatsRead, DashboardProjectRead
 from app.services.project_service import (
     create_project,
@@ -271,3 +274,77 @@ async def get_dashboard_project(
             activeResearchNodes=3,
         ),
     )
+
+
+
+
+@router.get("/admin/dashboard")
+async def admin_projects_dashboard(
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    System-level metrics for admin dashboard. This is separate from the /projects/{id} endpoint which is more project-focused.
+    """
+
+    #----Projects----#
+    total_projects = await session.scalar(
+        select(func.count(Project.id))
+    ) or 1 # avoid division by zero
+
+    active_projects = await session.scalar(
+        select(func.count(Project.id))
+        .where(Project.status == ProjectStatus.ACTIVE)
+    ) or 0 
+
+    #----Labor----#
+    total_labor_active = await session.scalar(
+        select(func.count(Labor.id))
+        .join(Project, Labor.project_id == Project.id)
+        .where(Project.status == ProjectStatus.ACTIVE)
+    ) or 0
+
+    labor_force_index = (
+        total_labor_active / active_projects
+        if active_projects > 0
+        else 0.0
+    )
+
+
+    #----FL Experiments----#
+    total_fl_experiments = await session.scalar(
+        select(func.count(FLExperiment.id))
+    ) or 0
+
+    fl_model_drift = total_fl_experiments / total_projects 
+
+
+    #----Tax Risk----#
+    total_tax_submissions = await session.scalar(
+        select(func.count(TaxSubmission.id))
+    ) or 0
+
+    risky_tax_submissions = await session.scalar(
+        select(func.count(TaxSubmission.id))
+        .where(TaxSubmission.status != TaxStatus.VALIDATED)
+    ) or 0
+
+    financial_risk_score = (
+        risky_tax_submissions / total_tax_submissions
+        if total_tax_submissions > 0
+        else 0.0
+    )
+
+
+    #----Response----#
+    return {
+        "projects": {
+            "total": total_projects,
+            "active": active_projects,
+        },
+        "laborForceIndex": round(labor_force_index, 2),
+        "flModelDrift": round(fl_model_drift, 2),
+        "financialRiskScore": round(financial_risk_score, 2),
+    }
+
+
+

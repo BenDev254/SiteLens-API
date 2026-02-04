@@ -66,6 +66,7 @@ Get your Gemini API key from: https://makersuite.google.com/app/apikey
 
 ```bash
 uvicorn main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The API will be available at:
