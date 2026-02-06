@@ -199,11 +199,20 @@ async def api_upload_weights(
         f"experiment_id={payload.experiment_id} | weights_length={len(payload.weights)}"
     )
 
+    stmt = select(FLParticipant).where(
+        FLParticipant.experiment_id == payload.experiment_id,
+        FLParticipant.user_id == user_id
+    )
+    participant = (await session.execute(stmt)).scalars().first()
+
+    if not participant:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
     try:
         upload = await upload_weights(
             session,
             payload.experiment_id,
-            user_id,
+            participant.id,
             weights=payload.weights,
             dataset_size=len(payload.weights)
         )
@@ -245,27 +254,6 @@ async def api_get_uploads(experiment_id: int, session: AsyncSession = Depends(ge
 # -----------------------------
 # Aggregation Endpoint
 # -----------------------------
-
-# @router.post("/experiments/{experiment_id}/aggregate")
-# async def api_aggregate_round(experiment_id: int, session: AsyncSession = Depends(get_session)):
-#     try:
-#         agg_weights = await aggregate_round(session, experiment_id)
-#         if not agg_weights:
-#             raise HTTPException(status_code=400, detail="Not enough envoy updates to aggregate")
-#         # Update global model after aggregation
-#         await update_global_model(session, experiment_id, agg_weights)
-#         # Return contributors for transparency
-#         stmt = select(FLWeightsUpload.uploader_id).where(
-#             and_(
-#                 FLWeightsUpload.experiment_id == experiment_id,
-#                 FLWeightsUpload.round == (await get_experiment(session, experiment_id)).current_round
-#             )
-#         )
-#         res = await session.execute(stmt)
-#         contributor_ids = [uid for (uid,) in res.fetchall()]
-#         return {"aggregated_weights": agg_weights, "contributors": contributor_ids}
-#     except ValueError as e:
-#         raise HTTPException(status_code=404, detail=str(e))
 
 @router.post("/experiments/{experiment_id}/aggregate")
 async def api_aggregate_round(experiment_id: int, session: AsyncSession = Depends(get_session)):

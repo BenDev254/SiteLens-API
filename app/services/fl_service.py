@@ -182,11 +182,11 @@ async def upload_weights(
         raise ValueError("experiment not found")
 
     # Get participant by user_id
-    stmt = select(FLParticipant).where(
-        FLParticipant.experiment_id == experiment_id,
-        FLParticipant.user_id == uploader_id
-    )
-    participant = (await session.execute(stmt)).scalars().first()
+    participant = await session.get(FLParticipant, uploader_id)
+
+    if not participant or participant.experiment_id != experiment_id:
+        raise PermissionError("not a participant")
+
 
     logger.info(f"Participant found: {participant is not None} | uploader_id={uploader_id}")
 
