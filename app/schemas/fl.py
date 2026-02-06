@@ -29,7 +29,7 @@ class JoinExperimentResponse(BaseModel):
 
 class WeightsUploadRequest(BaseModel):
     experiment_id: int
-    weights: Optional[List[float]] = None
+    weights: Optional[Dict[str, Any]] = None
     storage_key: Optional[str] = None
 
 

@@ -3,6 +3,7 @@ import math
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -117,11 +118,9 @@ async def join_experiment(
     experiment_id: int,
     user_id: int
 ) -> FLParticipant:
-
     exp = await session.get(FLExperiment, experiment_id)
     if not exp:
         raise ValueError("experiment not found")
-
     stmt = select(FLParticipant).where(
         FLParticipant.experiment_id == experiment_id,
         FLParticipant.user_id == user_id
@@ -162,6 +161,11 @@ async def get_global_model(
 # Weight Uploads
 # ============================================================
 
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 async def upload_weights(
     session: AsyncSession,
     experiment_id: int,
@@ -170,14 +174,26 @@ async def upload_weights(
     dataset_size: int
 ) -> FLWeightsUpload:
 
+    logger.info(f"Upload weights called | uploader_id={uploader_id} | experiment_id={experiment_id}")
+
+    # Get experiment
     exp = await session.get(FLExperiment, experiment_id)
     if not exp:
         raise ValueError("experiment not found")
 
-    participant = await session.get(FLParticipant, uploader_id)
-    if not participant or participant.experiment_id != experiment_id:
+    # Get participant by user_id
+    stmt = select(FLParticipant).where(
+        FLParticipant.experiment_id == experiment_id,
+        FLParticipant.user_id == uploader_id
+    )
+    participant = (await session.execute(stmt)).scalars().first()
+
+    logger.info(f"Participant found: {participant is not None} | uploader_id={uploader_id}")
+
+    if not participant:
         raise PermissionError("not a participant")
 
+    # Sanitize weights
     weights_json = sanitize_json({
         k: v if isinstance(v, list) else v.tolist()
         for k, v in weights.items()
@@ -190,11 +206,14 @@ async def upload_weights(
         weights=weights_json,
         dataset_size=dataset_size
     )
+
     session.add(upload)
     await session.commit()
     await session.refresh(upload)
-    return upload
 
+    logger.info(f"Weights upload successful | upload_id={upload.id} | uploader_id={upload.uploader_id}")
+
+    return upload
 
 async def get_uploads(
     session: AsyncSession,
@@ -211,53 +230,173 @@ async def get_uploads(
 # Aggregation (FedAvg)
 # ============================================================
 
+# async def aggregate_round(session: AsyncSession, experiment_id: int) -> Optional[Dict[str, Any]]:
+#     exp = await session.get(FLExperiment, experiment_id)
+#     if not exp:
+#         raise ValueError("experiment not found")
+
+#     stmt = select(FLWeightsUpload).where(
+#         FLWeightsUpload.experiment_id == experiment_id,
+#         FLWeightsUpload.round == exp.current_round
+#     )
+#     uploads = (await session.execute(stmt)).scalars().all()
+
+#     # if len(uploads) < exp.participant_threshold:
+#     #     return None
+
+#     if len(uploads) < 1:  # force aggregation even with 1 upload
+#         return None
+
+
+#     total_samples = sum(u.dataset_size for u in uploads)
+
+#     # Collect all layer keys across uploads
+#     all_keys = set()
+#     for u in uploads:
+#         w = u.weights
+#         if isinstance(w, list):
+#             all_keys.add("layer0")
+#         elif isinstance(w, dict):
+#             all_keys.update(w.keys())
+#         else:
+#             raise ValueError(f"Upload {u.id} has invalid weights format")
+
+#     # Initialize aggregated state
+#     agg_state = {k: None for k in all_keys}
+
+#     # Aggregate
+#     for k in agg_state.keys():
+#         agg_tensor = None
+#         for u in uploads:
+#             w = u.weights
+#             if isinstance(w, list):
+#                 w = {"layer0": w}
+#             if k not in w:
+#                 continue  # skip missing layers
+#             layer_tensor = torch.tensor(w[k]) * (u.dataset_size / total_samples)
+#             if agg_tensor is None:
+#                 agg_tensor = layer_tensor
+#             else:
+#                 agg_tensor += layer_tensor
+#         if agg_tensor is None:
+#             raise ValueError(f"No uploads contain weights for layer '{k}'")
+#         agg_state[k] = agg_tensor
+
+#     # Convert back to JSON
+#     agg_state_json = sanitize_json({k: v.tolist() for k, v in agg_state.items()})
+
+#     # Update global model
+#     global_model = FLGlobalModel(
+#         experiment_id=experiment_id,
+#         round=exp.current_round + 1,
+#         weights=agg_state_json
+#     )
+
+#     exp.current_round += 1
+#     exp.status = "TRAINING"
+
+#     session.add_all([global_model, exp])
+#     await session.commit()
+#     return agg_state_json
+
 async def aggregate_round(
     session: AsyncSession,
-    experiment_id: int
-) -> Optional[Dict[str, Any]]:
-
+    experiment_id: int,
+    round_override: Optional[int] = None
+) -> Dict[str, Any]:
     exp = await session.get(FLExperiment, experiment_id)
     if not exp:
         raise ValueError("experiment not found")
 
+    round_to_aggregate = round_override if round_override is not None else exp.current_round
+
     stmt = select(FLWeightsUpload).where(
         FLWeightsUpload.experiment_id == experiment_id,
-        FLWeightsUpload.round == exp.current_round
+        FLWeightsUpload.round == round_to_aggregate
     )
     uploads = (await session.execute(stmt)).scalars().all()
 
-    if len(uploads) < exp.participant_threshold:
-        return None
+    valid_uploads = []
+    rejected_uploads = []
 
-    total_samples = sum(u.dataset_size for u in uploads)
+    for u in uploads:
+        if isinstance(u.weights, dict) and u.dataset_size > 0:
+            valid_uploads.append(u)
+        elif isinstance(u.weights, list) and u.dataset_size > 0:
+            # Optionally convert single list into a dict with "layer0"
+            u.weights = {"layer0": u.weights}
+            valid_uploads.append(u)
+            # mark as "rejected" for logging original format
+            rejected_uploads.append(u.id)
+        else:
+            rejected_uploads.append(u.id)
 
-    agg_state = {
-        k: torch.zeros_like(torch.tensor(v))
-        for k, v in uploads[0].weights.items()
-    }
+    if not valid_uploads:
+        raise ValueError("No valid uploads found to aggregate")
 
-    for k in agg_state.keys():
-        agg_state[k] = sum(
-            torch.tensor(u.weights[k]) * (u.dataset_size / total_samples)
-            for u in uploads
-        )
+    total_samples = sum(u.dataset_size for u in valid_uploads)
 
-    agg_state_json = sanitize_json({
-        k: v.tolist() for k, v in agg_state.items()
-    })
+    # Collect all layer keys
+    all_keys = set()
+    for u in valid_uploads:
+        all_keys.update(u.weights.keys())
 
+    # Aggregate each layer
+    agg_state = {}
+    for layer in all_keys:
+        layer_tensor = None
+        for u in valid_uploads:
+            if layer not in u.weights:
+                continue
+            contrib = torch.tensor(u.weights[layer], dtype=torch.float32) * (u.dataset_size / total_samples)
+            layer_tensor = contrib if layer_tensor is None else layer_tensor + contrib
+        agg_state[layer] = layer_tensor if layer_tensor is not None else torch.zeros(1)
+
+    # Convert to JSON
+    agg_state_json = sanitize_json({k: v.tolist() for k, v in agg_state.items()})
+
+    # Update global model for the next round
     global_model = FLGlobalModel(
         experiment_id=experiment_id,
-        round=exp.current_round + 1,
+        round=round_to_aggregate + 1,
         weights=agg_state_json
     )
-
-    exp.current_round += 1
+    exp.current_round = round_to_aggregate + 1
     exp.status = "TRAINING"
 
     session.add_all([global_model, exp])
     await session.commit()
-    return agg_state_json
+
+    return {
+        "aggregated_weights": agg_state_json,
+        "rejected_uploads": rejected_uploads,
+        "contributors": [u.uploader_id for u in valid_uploads]
+    }
+
+
+
+
+
+# ============================================================
+# Update Global Model
+# ============================================================
+
+async def update_global_model(session: AsyncSession, experiment_id: int, weights: Dict[str, Any]):
+    global_model = await get_global_model(session, experiment_id)
+    if not global_model:
+        global_model = FLGlobalModel(
+            experiment_id=experiment_id,
+            round=(await get_experiment(session, experiment_id)).current_round + 1,
+            weights=weights
+        )
+    else:
+        global_model.weights = weights
+        global_model.round += 1
+
+    session.add(global_model)
+    await session.commit()
+    return global_model
+
 
 # ============================================================
 # Start Experiment

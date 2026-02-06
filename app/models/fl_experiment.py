@@ -18,6 +18,6 @@ class FLExperiment(SQLModel, table=True):
 
     participant_threshold: int = Field(default=3)
     current_round: int = Field(default=0)
-    status: str = Field(default="CREATED")  # CREATED | TRAINING | COMPLETED
+    status: str = Field(default="CREATED")  
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
