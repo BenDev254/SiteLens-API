@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME)
 
+
+# Middleware: correlation id
+app.add_middleware(BaseHTTPMiddleware, dispatch=CorrelationIdMiddleware())
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],         
@@ -24,9 +29,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Middleware: correlation id
-app.add_middleware(BaseHTTPMiddleware, dispatch=CorrelationIdMiddleware())
 
 # Route imports
 from app.api.health import router as health_router
