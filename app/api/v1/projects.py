@@ -47,9 +47,10 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.get("", response_model=List[ProjectRead])
-async def list_projects(q: Optional[str] = None, session: AsyncSession = Depends(get_session)):
-    projects = await list_projects(session, q=q)
+async def get_projects(q: Optional[str] = None, session: AsyncSession = Depends(get_session)):
+    projects = await list_projects(session, q=q)  # the service function
     return [ProjectRead(**p.model_dump()) for p in projects]
+
 
 
 @router.post("/create", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
