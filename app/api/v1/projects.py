@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 
 from app.core.database import get_session
 from app.models.assessment_result import AssessmentResult
+from app.models.contractor import Contractor
 from app.models.fl_experiment import FLExperiment
 from app.models.labor import Labor
 from app.models.project import Project, ProjectStatus
@@ -52,13 +53,32 @@ async def list_projects(q: Optional[str] = None, session: AsyncSession = Depends
 
 
 @router.post("/create", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
-async def create_project_endpoint(payload: ProjectCreate, session: AsyncSession = Depends(get_session), user=Depends(get_current_user)):
-    try:
-        # ownership enforced by contractor.owner_id when contractor is created. Here we assume user is allowed to create under contractor
-        project = await create_project(session, payload.contractor_id, payload.name, payload.description)
-        return ProjectRead(**project.model_dump())
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+async def create_project_endpoint(
+    payload: ProjectCreate,
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """
+    Create a project under the contractor associated with the current user.
+    """
+    # Fetch the contractor linked to this user
+    contractor = await session.scalar(
+        select(Contractor).where(Contractor.owner_id == user.id)
+    )
+    if not contractor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No contractor associated with user {user.id}"
+        )
+
+    project = await create_project(
+        session,
+        contractor_id=contractor.id,
+        name=payload.name,
+        description=payload.description
+    )
+    return ProjectRead(**project.model_dump())
+
 
 
 @router.get("/search", response_model=List[ProjectRead])
