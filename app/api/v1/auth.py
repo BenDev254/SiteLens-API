@@ -1,8 +1,9 @@
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import SQLModel
 
 from app.schemas.auth import UserCreate, UserResponse, Token
 from app.services.auth_service import create_user, authenticate_user, create_access_token
@@ -31,3 +32,23 @@ async def token(form_data: OAuth2PasswordRequestForm = Depends(), session: Async
     access_token_expires = timedelta(minutes=60)
     token = create_access_token(subject=user.username, role=user.role.value, expires_delta=access_token_expires)
     return Token(access_token=token, expires_in=int(access_token_expires.total_seconds()))
+
+
+
+@router.post("/reset-database", status_code=204)
+async def reset_database(
+    session: AsyncSession = Depends(get_session),
+    
+):
+    """
+    ⚠️ Deletes ALL rows from ALL SQLModel tables.
+    Schema remains intact.
+    """
+
+    try:
+        async with session.begin():
+            for table in reversed(SQLModel.metadata.sorted_tables):
+                await session.execute(delete(table))
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
