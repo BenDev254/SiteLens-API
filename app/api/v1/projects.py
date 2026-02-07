@@ -52,7 +52,7 @@ async def projects(q: Optional[str] = None, session: AsyncSession = Depends(get_
 
 
 @router.post("/create", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
-async def create_project_endpoint(payload: ProjectCreate, session: AsyncSession = Depends(get_session), user=Depends(get_current_user)):
+async def create_project_endpoint(payload: ProjectCreate, session: AsyncSession = Depends(get_session)):
     try:
         # ownership enforced by contractor.owner_id when contractor is created. Here we assume user is allowed to create under contractor
         project = await create_project(session, payload.contractor_id, payload.name, payload.description)
@@ -100,13 +100,13 @@ async def get_project_documents_with_ownership(project_id: int, session: AsyncSe
 
 
 @router.get("/{project_id}/readiness")
-async def readiness(project_id: int, session: AsyncSession = Depends(get_session), user=Depends(get_current_user)):
+async def readiness(project_id: int, session: AsyncSession = Depends(get_session)):
     project = await get_project(session, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     # ownership check: government role can view any, contractors can only view their own
-    if user.role != Role.GOVERNMENT:
-        is_owner = await check_ownership(session, project, user)
+    if role != Role.GOVERNMENT:
+        is_owner = await check_ownership(session, project)
         if not is_owner:
             raise HTTPException(status_code=403, detail="Not owner")
     return await project_readiness(session, project_id)
@@ -175,7 +175,7 @@ async def delete_doc(project_id: int, record_id: int, session: AsyncSession = De
 @router.get("/docs", response_model=List[DocumentRead])
 async def list_my_documents(
     session: AsyncSession = Depends(get_session),
-    user=Depends(get_current_user),
+   
 ):
     """
     Return all documents accessible to the logged-in user. 
