@@ -51,7 +51,7 @@ async def projects(q: Optional[str] = None, session: AsyncSession = Depends(get_
     return [ProjectRead(**p.model_dump()) for p in projects]
 
 
-@router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
 async def create_project_endpoint(payload: ProjectCreate, session: AsyncSession = Depends(get_session), user=Depends(get_current_user)):
     try:
         # ownership enforced by contractor.owner_id when contractor is created. Here we assume user is allowed to create under contractor
