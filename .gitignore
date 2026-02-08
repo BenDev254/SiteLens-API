@@ -15,3 +15,8 @@ uploads/
 #Alembic file
 alembic.ini
 alembic/versions/alembic.ini
+gemini3_test.py
+fl_test_pipeline.py
+Project_Story.md
+run_migrations.py
+read_tables.py
