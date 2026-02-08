@@ -1,7 +1,7 @@
 import logging
 import subprocess
 from fastapi import FastAPI
-from starlette.middleware.base import BaseHTTPMiddleware
+# from starlette.middleware.base import BaseHTTPMiddleware
 import sys
 
 
@@ -17,9 +17,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME)
 
-
 # Middleware: correlation id
-app.add_middleware(BaseHTTPMiddleware, dispatch=CorrelationIdMiddleware())
+# app.add_middleware(BaseHTTPMiddleware, dispatch=CorrelationIdMiddleware())
+
+app.add_middleware(CorrelationIdMiddleware)
+
 
 
 app.add_middleware(
