@@ -14,4 +14,4 @@ uploads/
 
 #Alembic file
 alembic.ini
-alembic/versions/
+alembic/versions/alembic.ini
